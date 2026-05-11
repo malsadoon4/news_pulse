@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>News Pulse</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f8fbff;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #7b8794;
+      --blue: #38bdf8;
+      --line: #dceef8;
+      --soft: #eef9ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Consolas, "Courier New", monospace;
+    }
+    .page { width: min(1100px, 92vw); margin: 56px auto; }
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: center;
+      border-bottom: 2px solid var(--line);
+      padding-bottom: 28px;
+      margin-bottom: 42px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(2.4rem, 6vw, 4.2rem);
+      letter-spacing: 0.08em;
+      color: #0f172a;
+    }
+    .subtitle { margin-top: 12px; color: var(--muted); font-size: 1.05rem; line-height: 1.6; }
+    .status {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 18px 32px;
+      background: var(--card);
+      color: var(--muted);
+      box-shadow: 0 8px 30px rgba(56, 189, 248, 0.08);
+    }
+    .ok { color: #059669; }
+    .bad { color: #ef4444; }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 22px;
+      margin-bottom: 44px;
+    }
+    .metric {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 26px;
+      min-height: 140px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+    }
+    .metric-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+    .metric-value { margin-top: 24px; color: var(--blue); font-size: 2rem; font-weight: 800; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 26px;
+      min-height: 320px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+    }
+    h2 {
+      margin: 0 0 22px;
+      font-size: 1.05rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #5b6b7e;
+    }
+    canvas { width: 100% !important; height: 230px !important; }
+    table { width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; }
+    th, td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: #64748b; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.08em; }
+    .summary {
+      background: var(--soft);
+      border-left: 5px solid var(--blue);
+      border-radius: 18px;
+      padding: 24px;
+      min-height: 140px;
+      font-family: Arial, sans-serif;
+      color: #475569;
+      line-height: 1.8;
+      font-size: 1.08rem;
+    }
+    footer { text-align: center; color: var(--muted); margin-top: 32px; }
+    @media (max-width: 850px) {
+      header, .grid, .metrics { grid-template-columns: 1fr; }
+      .status { width: fit-content; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <h1>📰 News Pulse</h1>
+        <div class="subtitle">Real-time news intelligence · SE446 Big Data Challenge</div>
+      </div>
+      <div id="connectionStatus" class="status">Loading...</div>
+    </header>
+
+    <section class="metrics">
+      <div class="metric"><div class="metric-label">📄 Total Headlines</div><div id="totalHeadlines" class="metric-value">—</div></div>
+      <div class="metric"><div class="metric-label">📡 Active Sources</div><div id="activeSources" class="metric-value">—</div></div>
+      <div class="metric"><div class="metric-label">⏱️ Time Windows</div><div id="timeWindows" class="metric-value">—</div></div>
+      <div class="metric"><div class="metric-label">🔤 Keywords</div><div id="keywordsCount" class="metric-value">—</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel"><h2>📊 Headlines by Source</h2><canvas id="sourceChart"></canvas></div>
+      <div class="panel"><h2>📈 Volume by Hour</h2><canvas id="windowChart"></canvas></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>🔤 Top Keywords</h2>
+        <table>
+          <thead><tr><th>Keyword</th><th>Mentions</th></tr></thead>
+          <tbody id="keywordRows"><tr><td colspan="2">Waiting for data...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>🤖 AI Thematic Summary</h2>
+        <div id="summary" class="summary">Generating summary from live headlines...</div>
+      </div>
+    </section>
+
+    <footer>Last updated: <span id="updatedAt">—</span></footer>
+  </main>
+
+  <script>
+    let sourceChart = null;
+    let windowChart = null;
+
+    function makeChart(canvasId, type, labels, values, label) {
+      const ctx = document.getElementById(canvasId);
+      const existing = canvasId === "sourceChart" ? sourceChart : windowChart;
+      if (existing) existing.destroy();
+
+      const chart = new Chart(ctx, {
+        type,
+        data: { labels, datasets: [{ label, data: values, borderWidth: 2, tension: 0.35 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+
+      if (canvasId === "sourceChart") sourceChart = chart;
+      else windowChart = chart;
+    }
+
+    function updateKeywords(rows) {
+      const body = document.getElementById("keywordRows");
+      if (!rows || rows.length === 0) {
+        body.innerHTML = '<tr><td colspan="2">Waiting for data...</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.slice(0, 10).map(row => `<tr><td>${row.word}</td><td>${row.count}</td></tr>`).join("");
+    }
+
+    async function loadData() {
+      const status = document.getElementById("connectionStatus");
+      try {
+        const response = await fetch("/data");
+        const data = await response.json();
+
+        status.textContent = "Connected";
+        status.className = "status ok";
+
+        const bySource = data.by_source || [];
+        const byWindow = data.by_window || [];
+        const topWords = data.top_words || [];
+        const total = bySource.reduce((sum, row) => sum + Number(row.count || 0), 0);
+
+        document.getElementById("totalHeadlines").textContent = total || "—";
+        document.getElementById("activeSources").textContent = bySource.length || "—";
+        document.getElementById("timeWindows").textContent = byWindow.length || "—";
+        document.getElementById("keywordsCount").textContent = topWords.length || "—";
+        document.getElementById("updatedAt").textContent = data.updated_at || "—";
+        document.getElementById("summary").textContent = data.llm_summary || "Waiting for summary...";
+
+        makeChart("sourceChart", "bar", bySource.map(row => row.source), bySource.map(row => row.count), "Headlines");
+        makeChart("windowChart", "line", byWindow.map(row => (row.window_start || "").substring(11, 16)), byWindow.map(row => row.count), "Headlines");
+        updateKeywords(topWords);
+      } catch (error) {
+        status.textContent = "Connection error";
+        status.className = "status bad";
+        console.error(error);
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 5000);
+  </script>
+</body>
+</html>
